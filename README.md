@@ -2,6 +2,8 @@
 
 CineMatch is a production-ready movie recommendation platform built with **Next.js 14**, **TypeScript**, and **Tailwind CSS**. It provides personalized movie suggestions by analyzing your favorite genres, current mood, and rating preferences using the **TMDB API**.
 
+![CineMatch Preview Screenshot](https://raw.githubusercontent.com/rsk807/Movie_recommendation/main/public/screenshot.png)
+
 ## ✨ Features
 
 - **Personalized Recommendations**: Advanced filtering based on multi-select genres, language, release year, and minimum rating.

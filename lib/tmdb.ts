@@ -39,6 +39,7 @@ export async function fetchFromTMDB(endpoint: string, params: Record<string, str
         console.warn('TMDB_API_KEY is not set. Falling back to local data.');
         return null;
     }
+    console.log(`[TMDB FETCH] ${endpoint}`, params);
 
     const queryParams = new URLSearchParams({
         api_key: TMDB_API_KEY,
@@ -51,7 +52,9 @@ export async function fetchFromTMDB(endpoint: string, params: Record<string, str
 }
 
 export async function getRecommendations(req: RecommendationRequest): Promise<Movie[]> {
+    console.log(`[getRecommendations] Starts. lang: ${req.preferredLanguage || req.language}`);
     if (!TMDB_API_KEY) {
+        console.log('[getRecommendations] No TMDB API KEY. Falling back.');
         return getLocalFallback(req);
     }
 
@@ -106,7 +109,6 @@ export async function getRecommendations(req: RecommendationRequest): Promise<Mo
                 'vote_average.gte': 4,
                 'vote_count.gte': 0,
                 'primary_release_date.gte': '1970-01-01',
-                with_original_language: undefined, // remove language restriction
                 with_genres: combinedGenres.length > 0 ? combinedGenres.join('|') : undefined,
             };
 
@@ -117,10 +119,15 @@ export async function getRecommendations(req: RecommendationRequest): Promise<Mo
             });
         }
 
-        // Step 3: Fetch trending movies if still < 5
+        // Step 3: Fetch popular movies in the requested language if still < 5
         if (results.length < 5) {
-            console.log("Fetching trending movies as fallback.");
-            data = (await fetchFromTMDB('/trending/movie/week', { language: mappedLang })) as { results?: Movie[] };
+            console.log("Fetching popular movies for language as fallback.");
+            data = (await fetchFromTMDB('/discover/movie', {
+                with_original_language: lang,
+                language: mappedLang,
+                sort_by: 'popularity.desc',
+                page: 1
+            })) as { results?: Movie[] };
             const newItems = data?.results || [];
             newItems.forEach((m: Movie) => {
                 if (!results.some(r => r.id === m.id)) results.push(m);
@@ -128,7 +135,7 @@ export async function getRecommendations(req: RecommendationRequest): Promise<Mo
         }
 
         // Step 4: Fallback dataset if API fails or yields < 5
-        if (results.length < 5) {
+        if (results.length < 5 && lang === 'en') {
             console.log("Yielding local fallback dataset.");
             return guaranteeTenMovies(results);
         }
@@ -136,8 +143,8 @@ export async function getRecommendations(req: RecommendationRequest): Promise<Mo
         // Apply simplistic scoring to sort remaining valid options
         const scoredResults = results.map(movie => {
             let score = 0;
-            const uMatches = movie.genre_ids.filter(id => userGenres.includes(id)).length;
-            const mMatches = movie.genre_ids.filter(id => moodGenres.includes(id)).length;
+            const uMatches = movie.genre_ids ? movie.genre_ids.filter(id => userGenres.includes(id)).length : 0;
+            const mMatches = movie.genre_ids ? movie.genre_ids.filter(id => moodGenres.includes(id)).length : 0;
 
             score += uMatches * 40;
             score += mMatches * 30;
@@ -150,11 +157,12 @@ export async function getRecommendations(req: RecommendationRequest): Promise<Mo
 
         // Exclude excluded genres strictly
         const finalMovies = scoredResults
-            .filter(item => !item.movie.genre_ids.some(id => excludeGenres.includes(id)))
+            .filter(item => !item.movie.genre_ids || !item.movie.genre_ids.some(id => excludeGenres.includes(id)))
             .sort((a, b) => b.score - a.score)
             .map(item => item.movie);
 
-        return guaranteeTenMovies(finalMovies.length > 0 ? finalMovies : results);
+        const returnMovies = finalMovies.length > 0 ? finalMovies : results;
+        return lang === 'en' ? guaranteeTenMovies(returnMovies) : returnMovies;
     } catch (error) {
         console.error('TMDB pipeline failed, relying on local fallback:', error);
         return getLocalFallback(req);
@@ -163,30 +171,33 @@ export async function getRecommendations(req: RecommendationRequest): Promise<Mo
 
 export async function searchMovies(query: string, lang: string = 'en'): Promise<Movie[]> {
     if (!TMDB_API_KEY) {
-        return FALLBACK_MOVIES.filter(m => m.title.toLowerCase().includes(query.toLowerCase()));
+        return lang === 'en' ? FALLBACK_MOVIES.filter(m => m.title.toLowerCase().includes(query.toLowerCase())) : [];
     }
     try {
         const data = (await fetchFromTMDB('/search/movie', { query, language: lang })) as MovieResponse;
         return data?.results || [];
     } catch {
-        return [];
+        return lang === 'en' ? FALLBACK_MOVIES.filter(m => m.title.toLowerCase().includes(query.toLowerCase())) : [];
     }
 }
 
-export async function getMovieDetails(movieId: number, lang: string = 'en'): Promise<Movie> {
+export async function getMovieDetails(movieId: number, lang: string = 'en'): Promise<Movie | null> {
     if (!TMDB_API_KEY) {
-        return FALLBACK_MOVIES.find(m => m.id === movieId) || { ...FALLBACK_MOVIES[0], id: movieId };
+        return FALLBACK_MOVIES.find(m => m.id === movieId) || null;
     }
     try {
         const details = (await fetchFromTMDB(`/movie/${movieId}`, { language: lang })) as Movie;
         if (!details || !details.id) throw new Error('No details');
         return details;
     } catch {
-        return FALLBACK_MOVIES.find(m => m.id === movieId) || { ...FALLBACK_MOVIES[0], id: movieId };
+        return FALLBACK_MOVIES.find(m => m.id === movieId) || null;
     }
 }
 
 function getLocalFallback(req: RecommendationRequest): Movie[] {
+    const lang = req.preferredLanguage || req.language || 'en';
+    if (lang !== 'en') return [];
+
     const valid = FALLBACK_MOVIES.filter(movie => {
         const matchesGenre = req.favoriteGenres.length === 0 || movie.genre_ids.some(id => req.favoriteGenres.includes(id));
         const inYearRange = !req.yearRange ||

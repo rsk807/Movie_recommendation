@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState } from 'react';
 import { Movie } from '@/lib/types';
-import { getMovieDetails } from '@/lib/tmdb';
 import { X, Bookmark, Trash2, Download, ExternalLink } from 'lucide-react';
 import Image from 'next/image';
 import { TMDB_IMAGE_BASE_URL } from '@/lib/constants';
@@ -39,7 +38,11 @@ export default function WatchlistDrawer({
         setLoading(true);
         try {
             const fetched = await Promise.all(
-                ids.map(id => getMovieDetails(id, language))
+                ids.map(async id => {
+                    const res = await fetch(`/api/movie?id=${id}&lang=${language}`);
+                    if (!res.ok) return null;
+                    return res.json();
+                })
             );
 
             const seen = new Set();

@@ -92,9 +92,16 @@ export default function SearchBar({ onMovieSelect, language }: SearchBarProps) {
                     {results.length > 0 ? (
                         <div className="max-h-[400px] overflow-y-auto custom-scrollbar">
                             {results.slice(0, 8).map(movie => (
-                                <button
+                                <a
                                     key={movie.id}
-                                    onClick={() => handleSelect(movie)}
+                                    href={`https://www.themoviedb.org/movie/${movie.id}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={() => {
+                                        setQuery('');
+                                        setResults([]);
+                                        setIsOpen(false);
+                                    }}
                                     className="w-full p-3 flex items-start gap-4 hover:bg-white/5 transition-colors text-left border-b border-white/5 last:border-0"
                                 >
                                     <div className="relative h-14 w-10 flex-shrink-0 bg-secondary rounded overflow-hidden">
@@ -119,7 +126,7 @@ export default function SearchBar({ onMovieSelect, language }: SearchBarProps) {
                                             </span>
                                         </div>
                                     </div>
-                                </button>
+                                </a>
                             ))}
                         </div>
                     ) : !loading && query.trim() && (
